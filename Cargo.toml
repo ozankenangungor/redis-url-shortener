@@ -1,10 +1,23 @@
+# BU SATIRI VEYA BLOĞU TAMAMEN SİLİN:
+# [workspace]
+# members = [...]
+
 [package]
 name = "redirection-service"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
 
 [dependencies]
-anyhow = "1.0.99"
-axum = "0.8.4"
-redis = "0.32.5"
-tokio = { version= "1.47.1" , features=["full"]}
+axum = "0.7"
+tokio = { version = "1.38", features = ["full"] }
+redis = { version = "0.24", features = ["tokio-comp"] }
+deadpool-redis = { version = "0.14", features = ["serde"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+dotenvy = "0.15"
+anyhow = "1.0"
+url = "2.5.7"
+
+
+[dev-dependencies]
+tower = { version = "0.4", features = ["util"] }

@@ -1,62 +1,43 @@
-use anyhow::Result;
-use axum::{
-    Router,
-    extract::{Path, State},
-    http::StatusCode,
-    response::{IntoResponse, Redirect},
-    routing::get,
-};
-use redis::{Client, Commands};
-use std::env;
+mod error;
+mod handlers;
+mod state;
 
-#[derive(Clone)]
-struct AppState {
-    redis_client: Client,
-}
+use crate::{handlers::redirect, state::AppState};
+use axum::{routing::get, Router};
+use deadpool_redis::{Config, Runtime};
+use std::env;
+use tracing::info;
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[tokio::main]
-async fn main() -> Result<()> {
-    let redis_url = env::var("REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1:6379".to_string());
-    let client = Client::open(redis_url)?;
+async fn main() -> anyhow::Result<()> {
+    dotenvy::dotenv().ok();
 
-    let app_state = AppState {
-        redis_client: client,
-    };
+    tracing_subscriber::registry()
+        .with(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "url_shortener=info".into()),
+        )
+        .with(tracing_subscriber::fmt::layer())
+        .init();
+
+    let redis_url = env::var("REDIS_URL").expect("REDIS_URL must be set");
+    let server_addr = env::var("SERVER_ADDR").unwrap_or_else(|_| "0.0.0.0:8080".to_string());
+
+    let cfg = Config::from_url(redis_url);
+    let pool = cfg.create_pool(Some(Runtime::Tokio1))?;
+    info!("Redis connection pool created.");
+
+    let app_state = AppState { redis_pool: pool };
 
     let app = Router::new()
-        .route("/{key}", get(redirect))
+        .route("/:key", get(redirect))
         .with_state(app_state);
 
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:8080").await?;
-    println!("Listening on http://0.0.0.0:8080");
+    let listener = tokio::net::TcpListener::bind(&server_addr).await?;
+    info!("Listening on http://{}", &server_addr);
 
     axum::serve(listener, app).await?;
 
     Ok(())
-}
-
-async fn redirect(State(state): State<AppState>, Path(key): Path<String>) -> impl IntoResponse {
-    let mut conn = match state.redis_client.get_connection() {
-        Ok(conn) => conn,
-        Err(e) => {
-            eprintln!("Failed to get Redis connection: {}", e);
-            return Err((
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Could not connect to the database",
-            ));
-        }
-    };
-
-    let redis_key = format!("/{}", key);
-
-    match conn.get::<&str, String>(&redis_key) {
-        Ok(url) => {
-            println!("Redirecting {} to {}", &redis_key, &url);
-            Ok(Redirect::permanent(&url))
-        }
-        Err(_) => {
-            println!("Key {} not found", &redis_key);
-            Err((StatusCode::NOT_FOUND, "URL Not Found"))
-        }
-    }
 }
