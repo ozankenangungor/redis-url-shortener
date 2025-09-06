@@ -17,6 +17,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 dotenvy = "0.15"
 anyhow = "1.0"
 url = "2.5.7"
+thiserror = "2.0.16"
 
 
 [dev-dependencies]
